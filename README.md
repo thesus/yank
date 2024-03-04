@@ -1,6 +1,6 @@
 # yank
 
-Yank is meant to export all discussion threads from a [Discourse](https://www.discourse.org/) instance and import them into [Mailman Hyperkitty](https://docs.mailman3.org/projects/hyperkitty/en/latest/). This repository should only be used as starting point. It's just a script cobbled together for one specific use case.
+Yank is meant to export all discussion threads from a [Discourse](https://www.discourse.org/) instance and import them into [Mailman Hyperkitty](https://docs.mailman3.org/projects/hyperkitty/en/latest/). This repository should only be used as starting point for your own adventures.
 
 ## Getting started
 
