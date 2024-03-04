@@ -1,16 +1,12 @@
 import os
-from dataclasses import dataclass
-from typing import Generator
 import re
 import time
+from dataclasses import dataclass
 from datetime import datetime
-
-from mailbox import mbox
-
-from email.utils import format_datetime, make_msgid
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 from email.message import EmailMessage
+from email.utils import format_datetime, make_msgid
+from mailbox import mbox
+from typing import Generator
 
 import requests
 
@@ -59,7 +55,7 @@ def get_messages(identifier: str) -> Generator[Message, None, None]:
             params={"include_raw": True},
         ).json()
 
-        if not "post_stream" in data:
+        if "post_stream" not in data:
             print(data)
             # Honor rate limit
             time.sleep(data["extras"]["wait_seconds"] + 1)
@@ -75,7 +71,7 @@ def get_messages(identifier: str) -> Generator[Message, None, None]:
             params={"include_raw": True, "post_stream": messages[:20]},
         ).json()
 
-        if not "post_stream" in data:
+        if "post_stream" not in data:
             print(data)
 
             time.sleep(data["extras"]["wait_seconds"] + 1)
@@ -92,7 +88,7 @@ def get_messages(identifier: str) -> Generator[Message, None, None]:
                 links=[
                     link["url"]
                     for link in message.get("link_counts", [])
-                    if link["internal"]
+                    if link["internal"]  # Internal links are uploads
                 ],
             )
 
@@ -125,13 +121,17 @@ def get_filename(header: str) -> str:
 
 
 def create_mail(
-    subject: str, message: Message, last_id=None
+    thread: str, message: Message, last_id=None
 ) -> tuple[EmailMessage, str]:
+    """Creates an email for a given thread.
+
+    E-Mails are linked to previous replies with `last_id`.
+    """
     message_id = make_msgid()
 
     mail = EmailMessage()
 
-    mail["Subject"] = subject
+    mail["subject"] = thread
     mail["From"] = message.email
     mail["To"] = LIST_NAME
     mail["Date"] = format_datetime(message.date)
@@ -177,9 +177,10 @@ def create_mail(
     return mail, message_id
 
 
-box = mbox("test.mbox")
-for thread in get_threads():
-    last = None
-    for message in thread.messages:
-        mail, last = create_mail(thread.title, message, last)
-        box.add(mail)
+if __name__ == "__main__":
+    box = mbox("export.mbox")
+    for thread in get_threads():
+        last = None
+        for message in thread.messages:
+            mail, last = create_mail(thread.title, message, last)
+            box.add(mail)
