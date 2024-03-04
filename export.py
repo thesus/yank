@@ -20,6 +20,7 @@ LIST_NAME = os.environ.get("LIST_NAME")
 
 headers = {"Api-Key": API_KEY, "Api-Username": "system"}
 
+# Parse users to map ids to mails
 users = {
     user["id"]: user["email"]
     for user in requests.get(
@@ -38,6 +39,7 @@ class Message:
 
     @property
     def email(self):
+        """Maps the user id to the email address."""
         return users[self.user_identifier]
 
 
@@ -48,24 +50,22 @@ class Thread:
     messages: Generator[Message, None, None]
 
 
-def get_messages(identifier: str):
-    data = requests.get(
-        API_BASE + f"/t/{identifier}.json",
-        headers=headers,
-        params={"include_raw": True},
-    ).json()
-
-    if not "post_stream" in data:
-        print(data)
-
-        # Honor rate limit
-        time.sleep(data["extras"]["wait_seconds"] + 1)
-
+def get_messages(identifier: str) -> Generator[Message, None, None]:
+    """Returns a generator of messages for all messages in a thread for a given id."""
+    while True:
         data = requests.get(
             API_BASE + f"/t/{identifier}.json",
             headers=headers,
             params={"include_raw": True},
         ).json()
+
+        if not "post_stream" in data:
+            print(data)
+            # Honor rate limit
+            time.sleep(data["extras"]["wait_seconds"] + 1)
+            continue
+        else:
+            break
 
     messages = data["post_stream"]["stream"]
     while messages:
@@ -74,7 +74,14 @@ def get_messages(identifier: str):
             headers=headers,
             params={"include_raw": True, "post_stream": messages[:20]},
         ).json()
-        del messages[:20]
+
+        if not "post_stream" in data:
+            print(data)
+
+            time.sleep(data["extras"]["wait_seconds"] + 1)
+            continue
+        else:
+            del messages[:20]
 
         for message in data["post_stream"]["posts"]:
             yield Message(
@@ -91,6 +98,7 @@ def get_messages(identifier: str):
 
 
 def get_threads() -> Generator[Thread, None, None]:
+    """Returns a generator with threads from discourse."""
     response = requests.get(
         API_BASE + "top.json", params={"period": "all"}, headers=headers
     )
@@ -109,6 +117,13 @@ def get_threads() -> Generator[Thread, None, None]:
         yield thread
 
 
+def get_filename(header: str) -> str:
+    """returns the filename for a given content-disposition-header."""
+    msg = EmailMessage()
+    msg["content-disposition"] = header
+    return msg.get_filename()
+
+
 def create_mail(
     subject: str, message: Message, last_id=None
 ) -> tuple[EmailMessage, str]:
@@ -121,6 +136,8 @@ def create_mail(
     mail["To"] = LIST_NAME
     mail["Date"] = format_datetime(message.date)
     mail["message-id"] = message_id
+
+    # Build a chain of mails for each thread
     if last_id:
         mail["In-Reply-To"] = last_id
 
@@ -145,11 +162,16 @@ def create_mail(
             link = API_BASE + link
         result = requests.get(link)
         maintype, subtype = result.headers["content-type"].split("/")
+
+        # If content disposition with filename is set, use that
+        if header := result.headers.get("content-disposition"):
+            filename = get_filename(header)
+        else:
+            # Otherwise use filename from url
+            filename = link.split("/")[-1]
+
         mail.add_attachment(
-            result.content,
-            maintype=maintype,
-            subtype=subtype,
-            filename=link.split("/")[-1],
+            result.content, maintype=maintype, subtype=subtype, filename=filename
         )
 
     return mail, message_id
@@ -161,5 +183,3 @@ for thread in get_threads():
     for message in thread.messages:
         mail, last = create_mail(thread.title, message, last)
         box.add(mail)
-
-    break
